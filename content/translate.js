@@ -371,10 +371,9 @@
 
   // ── Services names bulk translation ─────────────────────────────
 
-  const ARABIC_SELECTOR =
-    "td.td-default-lang .cell.cell-translations.cell-translations__rtl";
-  const ENGLISH_SELECTOR =
-    "td.p-0:not(.td-default-lang) .cell.cell-translations:not(.cell-translations__rtl)";
+  const SOURCE_CELL_SELECTOR = "td.td-default-lang .cell.cell-translations";
+  const ENGLISH_CELL_SELECTOR =
+    "td.p-0:not(.td-default-lang) .cell.cell-translations";
 
   function findTranslationTable() {
     const scoped =
@@ -384,9 +383,9 @@
     if (scoped) return scoped;
 
     const viewportTable = document.querySelector(
-      '[data-viewport-type="element"] table.table'
+      '[data-viewport-type="element"] table.table, table.table'
     );
-    if (viewportTable?.querySelector(ARABIC_SELECTOR)) return viewportTable;
+    if (viewportTable?.querySelector(SOURCE_CELL_SELECTOR)) return viewportTable;
 
     return null;
   }
@@ -394,26 +393,42 @@
   function isTranslationPage() {
     const table = findTranslationTable();
     if (!table) return false;
-
-    const hasArabic = table.querySelector(ARABIC_SELECTOR);
-    const hasEnglish = table.querySelector(ENGLISH_SELECTOR);
-
-    return !!(hasArabic && hasEnglish);
+    return !!table.querySelector(
+      `${SOURCE_CELL_SELECTOR} .cell-translations-name, ${SOURCE_CELL_SELECTOR} .cell-translations-description`
+    );
   }
 
   function findScrollContainer() {
-    const viewport = document.querySelector('[data-viewport-type="element"]');
-    if (viewport?.parentElement) {
-      const parent = viewport.parentElement;
-      if (parent.scrollHeight > parent.clientHeight + 1) return parent;
-    }
-    if (viewport && viewport.scrollHeight > viewport.clientHeight + 1) {
-      return viewport;
-    }
     return (
+      document.querySelector('[data-testid="virtuoso-scroller"]') ||
+      document.querySelector('[data-virtuoso-scroller="true"]') ||
+      document.querySelector('[data-viewport-type="element"]')?.parentElement ||
+      document.querySelector('[data-viewport-type="element"]') ||
       document.querySelector(".services-names__body") ||
-      document.querySelector(".service-names__body") ||
-      viewport
+      document.querySelector(".service-names__body")
+    );
+  }
+
+  function getSlotElement(cell) {
+    return (
+      cell?.querySelector(".cell-translations-name, .cell-translations-description") ||
+      cell
+    );
+  }
+
+  function findEditableInput(scope) {
+    if (!scope) return null;
+    const tr = scope.closest("tr");
+    const td = scope.closest("td");
+    const candidates = [
+      ...scope.querySelectorAll('input:not([type="checkbox"]), textarea'),
+      ...(td?.querySelectorAll('input:not([type="checkbox"]), textarea') || []),
+    ];
+    return (
+      candidates.find((el) => !el.closest(".td-service")) ||
+      (document.activeElement?.matches('input:not([type="checkbox"]), textarea')
+        ? document.activeElement
+        : null)
     );
   }
 
@@ -423,18 +438,8 @@
   const cellSleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   function findInputNearCell(cell) {
-    const td = cell.closest("td");
-    const tr = cell.closest("tr");
-
-    return (
-      cell.querySelector("input, textarea") ||
-      td?.querySelector("input, textarea") ||
-      tr?.querySelector("input, textarea") ||
-      (document.activeElement?.matches("input, textarea")
-        ? document.activeElement
-        : null) ||
-      document.querySelector("input:focus, textarea:focus")
-    );
+    const slot = getSlotElement(cell);
+    return findEditableInput(slot || cell);
   }
 
   function setInputValue(input, text) {
@@ -451,32 +456,26 @@
     input.dispatchEvent(new Event("blur", { bubbles: true }));
   }
 
-  function getCellText(el) {
-    if (!el) return "";
-
-    const nearbyInput = findInputNearCell(el);
-    if (
-      nearbyInput &&
-      (el.contains(nearbyInput) || el.closest("tr")?.contains(nearbyInput))
-    ) {
-      return nearbyInput.value.trim();
-    }
-
-    const input = el.querySelector("input, textarea");
+  function getSlotText(cell) {
+    if (!cell) return "";
+    const slot = getSlotElement(cell);
+    const input = slot.querySelector('input:not([type="checkbox"]), textarea');
     if (input) return input.value.trim();
-    return el.textContent.trim();
+    const inner = slot.querySelector("span span") || slot.querySelector("span");
+    return (inner?.textContent || "").trim();
   }
 
   async function setCellText(cell, text) {
     if (!cell) return false;
 
-    cell.click();
+    const clickTarget = getSlotElement(cell);
+    clickTarget.click();
     await cellSleep(CELL_EDIT_DELAY);
 
     let input = findInputNearCell(cell);
 
     if (!input) {
-      cell.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+      clickTarget.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
       await cellSleep(CELL_EDIT_DELAY);
       input = findInputNearCell(cell);
     }
@@ -489,8 +488,8 @@
     }
 
     const editable =
-      cell.querySelector("[contenteditable='true']") ||
-      (cell.isContentEditable ? cell : null);
+      clickTarget.querySelector("[contenteditable='true']") ||
+      (clickTarget.isContentEditable ? clickTarget : null);
 
     if (editable) {
       editable.focus();
@@ -507,35 +506,37 @@
       return true;
     }
 
-    cell.textContent = text;
+    const inner = clickTarget.querySelector("span span") || clickTarget.querySelector("span");
+    if (inner) inner.textContent = text;
+    else clickTarget.textContent = text;
     await cellSleep(CELL_BETWEEN_DELAY);
     return false;
   }
 
-  function getRowKey(tr, englishText) {
-    const top = parseInt(tr.style.top, 10) || tr.offsetTop || 0;
+  function getRowKey(tr, sourceText) {
+    const itemIndex = tr.getAttribute("data-item-index");
+    if (itemIndex != null) return `item-${itemIndex}`;
     const idMatch = tr.textContent.match(/\bID\s*(\d+)\b/i);
-    const idPart = idMatch ? `id-${idMatch[1]}` : `top-${top}`;
-    return `${idPart}-${englishText}`;
+    const idPart = idMatch ? `id-${idMatch[1]}` : `row-${tr.rowIndex}`;
+    return `${idPart}-${sourceText}`;
   }
 
   function collectRowPairs(table) {
     const pairs = [];
-    const trs = table.querySelectorAll("tbody tr");
 
-    trs.forEach((tr, index) => {
-      const arabicCell = tr.querySelector(ARABIC_SELECTOR);
-      const englishCell = tr.querySelector(ENGLISH_SELECTOR);
+    table.querySelectorAll("tbody tr").forEach((tr, index) => {
+      const arabicCell = tr.querySelector(SOURCE_CELL_SELECTOR);
+      const englishCell = tr.querySelector(ENGLISH_CELL_SELECTOR);
       if (!arabicCell || !englishCell) return;
 
-      const englishText = getCellText(englishCell);
-      if (!englishText) return;
+      const sourceText = getSlotText(arabicCell);
+      if (!sourceText) return;
 
       pairs.push({
-        key: getRowKey(tr, englishText),
+        key: getRowKey(tr, sourceText),
         arabicCell,
         englishCell,
-        text: englishText,
+        text: sourceText,
         rowIndex: index,
       });
     });
@@ -612,8 +613,18 @@
     const entries = await collectAllRowEntries(scrollEl, scrollDelay);
 
     if (!entries.length) {
-      throw new Error("No translation rows with English text found.");
+      throw new Error("No translation rows with source text found.");
     }
+
+    sendStatus("translating", {
+      message: `Copying ${entries.length} rows to English column…`,
+      total: entries.length,
+      phase: "copy",
+    });
+
+    await applyToAllRows(scrollEl, scrollDelay, entries, async (pair, entry) => {
+      await setCellText(pair.englishCell, entry.text);
+    });
 
     sendStatus("translating", {
       message: `Translating ${entries.length} rows (EN → AR)…`,
