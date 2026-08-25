@@ -71,36 +71,42 @@
         <span id="translate-status-text">Ready</span>
       </section>
 
-      <section class="field">
-        <label>Services names page</label>
-        <p class="hint">
-          Reads English from the right column, translates EN → AR, and fills
-          the Arabic column on the left. Skips empty rows.
-        </p>
+      <section id="add-translations-section" class="add-translations-section" hidden>
+        <section class="field">
+          <label>Services names translations</label>
+          <p class="hint">
+            Reads English from the right column, translates EN → AR, and fills
+            the Arabic column on the left. Skips empty rows.
+          </p>
+        </section>
+
+        <div class="actions">
+          <button id="add-translations-btn" class="btn primary">
+            Add translations
+          </button>
+          <button id="cancel-translate-btn" class="btn secondary" disabled>
+            Cancel
+          </button>
+        </div>
+
+        <section class="field">
+          <label for="translate-scroll-delay">Scroll delay (ms)</label>
+          <input
+            type="number"
+            id="translate-scroll-delay"
+            min="10"
+            max="200"
+            value="20"
+          />
+          <p class="hint">Increase if rows are missed on virtualized tables</p>
+        </section>
+
+        <hr class="divider" />
       </section>
 
-      <div class="actions">
-        <button id="add-translations-btn" class="btn primary" disabled>
-          Add translations
-        </button>
-        <button id="cancel-translate-btn" class="btn secondary" disabled>
-          Cancel
-        </button>
-      </div>
-
-      <section class="field">
-        <label for="translate-scroll-delay">Scroll delay (ms)</label>
-        <input
-          type="number"
-          id="translate-scroll-delay"
-          min="10"
-          max="200"
-          value="20"
-        />
-        <p class="hint">Increase if rows are missed on virtualized tables</p>
-      </section>
-
-      <hr class="divider" />
+      <p id="no-translation-page-hint" class="hint translate-hint">
+        Open the services names translation page to use Add translations.
+      </p>
 
       <section class="field">
         <label>Generic page translation</label>

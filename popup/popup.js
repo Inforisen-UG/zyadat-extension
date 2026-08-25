@@ -15,8 +15,11 @@ const pickBtn = document.getElementById("pick-btn");
 const addTranslationsBtn = document.getElementById("add-translations-btn");
 const cancelTranslateBtn = document.getElementById("cancel-translate-btn");
 const translateScrollDelayInput = document.getElementById("translate-scroll-delay");
+const addTranslationsSection = document.getElementById("add-translations-section");
+const noTranslationPageHint = document.getElementById("no-translation-page-hint");
 
 let translateRunning = false;
+let translationPageDetected = false;
 let running = false;
 
 // ── Tab switching ────────────────────────────────────────────────
@@ -42,6 +45,15 @@ function onProgressMessage(msg) {
 function setStatus(state, text) {
   statusDot.className = `dot ${state}`;
   statusText.textContent = text;
+}
+
+function setAddTranslationsUi(detected) {
+  translationPageDetected = detected;
+  addTranslationsSection.hidden = !detected;
+  noTranslationPageHint.hidden = detected;
+  addTranslationsBtn.disabled = !detected || translateRunning;
+  if (detected) addTranslationsBtn.dataset.ready = "1";
+  else delete addTranslationsBtn.dataset.ready;
 }
 
 function setTranslateStatus(state, text) {
@@ -115,21 +127,21 @@ function updateTranslateStatus(msg) {
     case "done":
       setTranslateStatus("ready", msg.message || "Done");
       pickBtn.disabled = false;
-      addTranslationsBtn.disabled = false;
+      setAddTranslationsUi(translationPageDetected);
       cancelTranslateBtn.disabled = true;
       translateRunning = false;
       break;
     case "cancelled":
       setTranslateStatus("ready", "Cancelled");
       pickBtn.disabled = false;
-      addTranslationsBtn.disabled = false;
+      setAddTranslationsUi(translationPageDetected);
       cancelTranslateBtn.disabled = true;
       translateRunning = false;
       break;
     case "error":
       setTranslateStatus("error", msg.message || "Error");
       pickBtn.disabled = false;
-      addTranslationsBtn.disabled = false;
+      setAddTranslationsUi(translationPageDetected);
       cancelTranslateBtn.disabled = true;
       translateRunning = false;
       break;
@@ -247,7 +259,8 @@ async function initTranslate() {
   const tab = await getActiveTab();
 
   if (!tab?.id || tab.url?.startsWith("chrome://")) {
-    setTranslateStatus("error", "Open the services names page first");
+    setTranslateStatus("error", "Open a web page first");
+    setAddTranslationsUi(false);
     return;
   }
 
@@ -255,15 +268,16 @@ async function initTranslate() {
 
   if (!ping) {
     setTranslateStatus("error", "Reload the page, then try again");
+    setAddTranslationsUi(false);
     return;
   }
 
   if (ping.hasTranslationTable) {
-    addTranslationsBtn.disabled = false;
-    setTranslateStatus("ready", "Ready — translation table detected");
+    setAddTranslationsUi(true);
+    setTranslateStatus("ready", "Translation page detected");
   } else {
-    setTranslateStatus("ready", "Generic translate only (no names table)");
-    addTranslationsBtn.disabled = true;
+    setAddTranslationsUi(false);
+    setTranslateStatus("ready", "Generic translate available");
   }
 }
 
@@ -322,7 +336,7 @@ addTranslationsBtn.addEventListener("click", async () => {
     setTranslateStatus("error", err.message);
   } finally {
     translateRunning = false;
-    addTranslationsBtn.disabled = false;
+    setAddTranslationsUi(translationPageDetected);
     cancelTranslateBtn.disabled = true;
     pickBtn.disabled = false;
   }

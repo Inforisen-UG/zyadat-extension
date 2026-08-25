@@ -377,11 +377,28 @@
     "td.p-0:not(.td-default-lang) .cell.cell-translations:not(.cell-translations__rtl)";
 
   function findTranslationTable() {
-    return (
+    const scoped =
       document.querySelector(".services-names__body table.table") ||
-      document.querySelector('[data-viewport-type="element"] table.table') ||
-      document.querySelector("table.table")
+      document.querySelector(".service-names__body table.table");
+
+    if (scoped) return scoped;
+
+    const viewportTable = document.querySelector(
+      '[data-viewport-type="element"] table.table'
     );
+    if (viewportTable?.querySelector(ARABIC_SELECTOR)) return viewportTable;
+
+    return null;
+  }
+
+  function isTranslationPage() {
+    const table = findTranslationTable();
+    if (!table) return false;
+
+    const hasArabic = table.querySelector(ARABIC_SELECTOR);
+    const hasEnglish = table.querySelector(ENGLISH_SELECTOR);
+
+    return !!(hasArabic && hasEnglish);
   }
 
   function findScrollContainer() {
@@ -665,7 +682,7 @@
       sendResponse({
         ok: true,
         pickerActive,
-        hasTranslationTable: !!findTranslationTable(),
+        hasTranslationTable: isTranslationPage(),
       });
       return false;
     }
