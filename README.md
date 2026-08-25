@@ -41,12 +41,11 @@ For the admin **services names** translation table:
 
 The extension will:
 
-1. Read English text from the left column (`td-default-lang` / RTL cells)
-2. Copy it to the empty English cells on the right
-3. Translate each name from English → Arabic
-4. Paste the Arabic translation back into the left column
+1. Find every table row that has **English text** on the right (skips empty rows)
+2. Translate each English entry to Arabic
+3. Fill the matching **Arabic cell** on the left (via the real input, not just the view div)
 
-Works with virtualized tables — scrolls to find all rows automatically.
+Works with multiple translation slots per service (name, description, etc.) and virtualized tables.
 
 ### Generic element translation
 

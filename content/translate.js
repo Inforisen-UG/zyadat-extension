@@ -371,7 +371,7 @@
 
   // ── Services names bulk translation ─────────────────────────────
 
-  const SOURCE_SELECTOR =
+  const ARABIC_SELECTOR =
     "td.td-default-lang .cell.cell-translations.cell-translations__rtl";
   const ENGLISH_SELECTOR =
     "td.p-0:not(.td-default-lang) .cell.cell-translations:not(.cell-translations__rtl)";
@@ -495,30 +495,33 @@
     return false;
   }
 
-  function getRowKey(tr, sourceCell) {
+  function getRowKey(tr, englishText) {
+    const top = parseInt(tr.style.top, 10) || tr.offsetTop || 0;
     const idMatch = tr.textContent.match(/\bID\s*(\d+)\b/i);
-    if (idMatch) return `id-${idMatch[1]}`;
-    return `text-${getCellText(sourceCell)}`;
+    const idPart = idMatch ? `id-${idMatch[1]}` : `top-${top}`;
+    return `${idPart}-${englishText}`;
   }
 
   function collectRowPairs(table) {
     const pairs = [];
+    const trs = table.querySelectorAll("tbody tr");
 
-    for (const tr of table.querySelectorAll("tbody tr")) {
-      const sourceCell = tr.querySelector(SOURCE_SELECTOR);
+    trs.forEach((tr, index) => {
+      const arabicCell = tr.querySelector(ARABIC_SELECTOR);
       const englishCell = tr.querySelector(ENGLISH_SELECTOR);
-      if (!sourceCell || !englishCell) continue;
+      if (!arabicCell || !englishCell) return;
 
-      const text = getCellText(sourceCell);
-      if (!text) continue;
+      const englishText = getCellText(englishCell);
+      if (!englishText) return;
 
       pairs.push({
-        key: getRowKey(tr, sourceCell),
-        sourceCell,
+        key: getRowKey(tr, englishText),
+        arabicCell,
         englishCell,
-        text,
+        text: englishText,
+        rowIndex: index,
       });
-    }
+    });
 
     return pairs;
   }
@@ -592,21 +595,11 @@
     const entries = await collectAllRowEntries(scrollEl, scrollDelay);
 
     if (!entries.length) {
-      throw new Error("No service name rows with text found.");
+      throw new Error("No translation rows with English text found.");
     }
 
     sendStatus("translating", {
-      message: `Copying ${entries.length} names to English…`,
-      total: entries.length,
-      phase: "copy",
-    });
-
-    await applyToAllRows(scrollEl, scrollDelay, entries, async (pair, entry) => {
-      await setCellText(pair.englishCell, entry.text);
-    });
-
-    sendStatus("translating", {
-      message: `Translating ${entries.length} names to Arabic…`,
+      message: `Translating ${entries.length} rows (EN → AR)…`,
       total: entries.length,
       phase: "translate",
     });
@@ -638,7 +631,7 @@
       entries,
       async (pair, entry) => {
         const arabic = byId.get(entry.id);
-        if (arabic) await setCellText(pair.sourceCell, arabic);
+        if (arabic) await setCellText(pair.arabicCell, arabic);
       }
     );
 
