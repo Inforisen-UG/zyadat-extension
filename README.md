@@ -1,6 +1,9 @@
-# Duplicate Provider Selector
+# Zyadat Tools
 
-Chrome extension that finds duplicate **provider service IDs** in SMM panel service tables and checks their checkboxes — keeping one row unchecked per duplicate ID.
+Chrome extension with two tools:
+
+1. **Duplicate Provider Selector** — finds duplicate provider service IDs in SMM panel tables and checks their checkboxes (keeps one per ID).
+2. **Translation** — pick any element on a page, extract text per tag, and translate to a chosen language (source is always auto-detected).
 
 ## Install (unpacked)
 
@@ -8,18 +11,17 @@ Chrome extension that finds duplicate **provider service IDs** in SMM panel serv
 2. Enable **Developer mode** (top right)
 3. Click **Load unpacked**
 4. Select this folder (`zyadat-extension`)
+5. Reload any open tabs after installing
 
-## Usage
+## Duplicate Provider Selector
 
-1. Open your admin **Services** page (the one with `.service-table__container`)
+1. Open your admin **Services** page (with `.service-table__container`)
 2. Filter as needed (e.g. by provider)
-3. Click the extension icon
+3. Click the extension icon → **Duplicates** tab
 4. Choose which duplicate to **keep unchecked** (first or last)
 5. Click **Run**
 
 The extension scrolls the virtualized table twice: once to scan all rows, once to check duplicates.
-
-## Options
 
 | Setting | Description |
 |--------|-------------|
@@ -27,8 +29,56 @@ The extension scrolls the virtualized table twice: once to scan all rows, once t
 | **Keep last row** | Leaves the bottommost duplicate unchecked |
 | **Scroll delay** | Milliseconds between scroll steps (increase if rows are missed) |
 
-## How it works
+## Translation
 
-- Groups rows by `.service-table__provider-service-id`
-- If provider ID `3001` appears 3 times → checks 2, leaves 1 unchecked
-- Uses native checkbox `click()` so the panel's mass-action counter updates correctly
+### Add translations (services names page)
+
+For the admin **services names** translation table:
+
+1. Open the services names page (Arabic / English columns)
+2. Click the extension icon → **Translate** tab
+3. Click **Add translations**
+
+The extension will:
+
+1. Read English text from the left column (`td-default-lang` / RTL cells)
+2. Copy it to the empty English cells on the right
+3. Translate each name from English → Arabic
+4. Paste the Arabic translation back into the left column
+
+Works with virtualized tables — scrolls to find all rows automatically.
+
+### Generic element translation
+
+1. Click **Select element on page**
+2. Click any element on the page
+3. Each tag's text is translated separately into your chosen language
+4. Results appear in a floating panel with **Copy All**
+
+Press **Esc** while picking to cancel.
+
+### Supported languages (generic picker)
+
+English, Arabic, Spanish, French, German, Turkish, Urdu, Hindi, Bengali, Portuguese, Russian, Japanese, Korean, Chinese (Simplified/Traditional), Italian, Dutch, Polish, Indonesian, Persian.
+
+### Limits
+
+- Selections with more than 200 text segments are capped (first 200 translated)
+- Uses Google Translate's free endpoint (no API key required)
+
+## Project structure
+
+```
+zyadat-extension/
+├── manifest.json
+├── background/background.js    # Translation API calls
+├── content/
+│   ├── content.js              # Duplicate selector
+│   └── translate.js            # Element picker + results panel
+├── popup/                      # Extension popup UI
+└── icons/
+```
+
+## Reload after changes
+
+Go to `chrome://extensions`, click the refresh icon on the extension card, then reload the page you're working on.

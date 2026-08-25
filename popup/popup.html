@@ -3,58 +3,145 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Duplicate Provider Selector</title>
+    <title>Zyadat Tools</title>
     <link rel="stylesheet" href="popup.css" />
   </head>
   <body>
     <header>
-      <h1>Duplicate Selector</h1>
-      <p class="subtitle">Check duplicate provider IDs, keep one per ID</p>
+      <h1>Zyadat Tools</h1>
+      <p class="subtitle">Duplicate selector &amp; translation</p>
     </header>
 
-    <section class="status" id="page-status">
-      <span class="dot" id="status-dot"></span>
-      <span id="status-text">Checking page…</span>
-    </section>
+    <nav class="tabs">
+      <button class="tab active" data-tab="duplicates">Duplicates</button>
+      <button class="tab" data-tab="translate">Translate</button>
+    </nav>
 
-    <section class="field">
-      <label>Keep unchecked</label>
-      <div class="radio-group">
-        <label class="radio">
-          <input type="radio" name="keep" value="first" checked />
-          First row (topmost)
-        </label>
-        <label class="radio">
-          <input type="radio" name="keep" value="last" />
-          Last row (bottommost)
-        </label>
+    <!-- Duplicates tab -->
+    <div id="tab-duplicates" class="tab-panel active">
+      <section class="status" id="page-status">
+        <span class="dot" id="status-dot"></span>
+        <span id="status-text">Checking page…</span>
+      </section>
+
+      <section class="field">
+        <label>Keep unchecked</label>
+        <div class="radio-group">
+          <label class="radio">
+            <input type="radio" name="keep" value="first" checked />
+            First row (topmost)
+          </label>
+          <label class="radio">
+            <input type="radio" name="keep" value="last" />
+            Last row (bottommost)
+          </label>
+        </div>
+      </section>
+
+      <section class="field">
+        <label for="scroll-delay">Scroll delay (ms)</label>
+        <input
+          type="number"
+          id="scroll-delay"
+          min="10"
+          max="200"
+          value="20"
+        />
+        <p class="hint">Increase if rows are missed</p>
+      </section>
+
+      <div class="actions">
+        <button id="run-btn" class="btn primary" disabled>Run</button>
+        <button id="cancel-btn" class="btn secondary" disabled>Cancel</button>
       </div>
-    </section>
 
-    <section class="field">
-      <label for="scroll-delay">Scroll delay (ms)</label>
-      <input
-        type="number"
-        id="scroll-delay"
-        min="10"
-        max="200"
-        value="20"
-      />
-      <p class="hint">Increase if rows are missed</p>
-    </section>
-
-    <div class="actions">
-      <button id="run-btn" class="btn primary" disabled>Run</button>
-      <button id="cancel-btn" class="btn secondary" disabled>Cancel</button>
+      <section class="log" id="log" hidden>
+        <div id="log-message"></div>
+        <div class="progress-bar">
+          <div class="progress-fill" id="progress-fill"></div>
+        </div>
+        <pre id="log-details"></pre>
+      </section>
     </div>
 
-    <section class="log" id="log" hidden>
-      <div id="log-message"></div>
-      <div class="progress-bar">
-        <div class="progress-fill" id="progress-fill"></div>
+    <!-- Translate tab -->
+    <div id="tab-translate" class="tab-panel">
+      <section class="status" id="translate-status">
+        <span class="dot ready" id="translate-dot"></span>
+        <span id="translate-status-text">Ready</span>
+      </section>
+
+      <section class="field">
+        <label>Services names page</label>
+        <p class="hint">
+          Reads English from the Arabic column, copies to English, translates
+          EN → AR, and pastes Arabic back on the left.
+        </p>
+      </section>
+
+      <div class="actions">
+        <button id="add-translations-btn" class="btn primary" disabled>
+          Add translations
+        </button>
+        <button id="cancel-translate-btn" class="btn secondary" disabled>
+          Cancel
+        </button>
       </div>
-      <pre id="log-details"></pre>
-    </section>
+
+      <section class="field">
+        <label for="translate-scroll-delay">Scroll delay (ms)</label>
+        <input
+          type="number"
+          id="translate-scroll-delay"
+          min="10"
+          max="200"
+          value="20"
+        />
+        <p class="hint">Increase if rows are missed on virtualized tables</p>
+      </section>
+
+      <hr class="divider" />
+
+      <section class="field">
+        <label>Generic page translation</label>
+        <p class="hint">Pick any element and translate per tag</p>
+      </section>
+
+      <section class="field">
+        <label>From</label>
+        <input type="text" value="Detect" readonly class="readonly-input" />
+      </section>
+
+      <section class="field">
+        <label for="target-lang">To</label>
+        <select id="target-lang">
+          <option value="en">English</option>
+          <option value="ar">Arabic</option>
+          <option value="es">Spanish</option>
+          <option value="fr">French</option>
+          <option value="de">German</option>
+          <option value="tr">Turkish</option>
+          <option value="ur">Urdu</option>
+          <option value="hi">Hindi</option>
+          <option value="bn">Bengali</option>
+          <option value="pt">Portuguese</option>
+          <option value="ru">Russian</option>
+          <option value="ja">Japanese</option>
+          <option value="ko">Korean</option>
+          <option value="zh-CN">Chinese (Simplified)</option>
+          <option value="zh-TW">Chinese (Traditional)</option>
+          <option value="it">Italian</option>
+          <option value="nl">Dutch</option>
+          <option value="pl">Polish</option>
+          <option value="id">Indonesian</option>
+          <option value="fa">Persian</option>
+        </select>
+      </section>
+
+      <div class="actions">
+        <button id="pick-btn" class="btn secondary">Select element on page</button>
+      </div>
+    </div>
 
     <script src="popup.js"></script>
   </body>

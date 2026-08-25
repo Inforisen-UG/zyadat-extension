@@ -18,6 +18,38 @@ header {
   border-bottom: 1px solid #e5e7eb;
 }
 
+.tabs {
+  display: flex;
+  background: #fff;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.tab {
+  flex: 1;
+  padding: 8px 0;
+  border: none;
+  background: none;
+  font-size: 12px;
+  font-weight: 500;
+  color: #6b7280;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.tab.active {
+  color: #2563eb;
+  border-bottom-color: #2563eb;
+}
+
+.tab-panel {
+  display: none;
+}
+
+.tab-panel.active {
+  display: block;
+}
+
 h1 {
   font-size: 15px;
   font-weight: 600;
@@ -97,12 +129,30 @@ h1 {
   cursor: pointer;
 }
 
-input[type="number"] {
+input[type="number"],
+select,
+.readonly-input {
   width: 100%;
   padding: 6px 8px;
   border: 1px solid #d1d5db;
   border-radius: 6px;
   font-size: 13px;
+}
+
+.readonly-input {
+  background: #f3f4f6;
+  color: #6b7280;
+  cursor: default;
+}
+
+.translate-hint {
+  margin: 0 16px 14px;
+}
+
+.divider {
+  margin: 12px 16px;
+  border: none;
+  border-top: 1px solid #e5e7eb;
 }
 
 .hint {

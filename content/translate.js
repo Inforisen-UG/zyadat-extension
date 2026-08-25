@@ -1,0 +1,644 @@
+(() => {
+  const PANEL_ID = "zyadat-translate-panel";
+  const HIGHLIGHT_ID = "zyadat-translate-highlight";
+  const BANNER_ID = "zyadat-translate-banner";
+  const MAX_SEGMENTS = 200;
+  const SKIP_TAGS = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "SVG", "PATH"]);
+
+  let pickerActive = false;
+  let addTranslationsCancelled = false;
+  let targetLang = "en";
+  let hoveredEl = null;
+  let panelEl = null;
+
+  const sendStatus = (status, detail = {}) => {
+    chrome.runtime.sendMessage({ type: "PICKER_STATUS", status, ...detail });
+  };
+
+  const getDirectText = (el) =>
+    [...el.childNodes]
+      .filter((n) => n.nodeType === Node.TEXT_NODE)
+      .map((n) => n.textContent.trim())
+      .filter(Boolean)
+      .join(" ");
+
+  const getCssPath = (el, root) => {
+    const parts = [];
+    let node = el;
+
+    while (node && node !== root && node.nodeType === Node.ELEMENT_NODE) {
+      const parent = node.parentElement;
+      if (!parent) break;
+
+      const siblings = [...parent.children].filter(
+        (c) => c.tagName === node.tagName
+      );
+      const idx = siblings.indexOf(node) + 1;
+      const tag = node.tagName.toLowerCase();
+      parts.unshift(
+        siblings.length > 1 ? `${tag}:nth-child(${idx})` : tag
+      );
+      node = parent;
+    }
+
+    return parts.join(" > ") || el.tagName.toLowerCase();
+  };
+
+  function extractTextSegments(root) {
+    const segments = [];
+    let id = 0;
+
+    function walk(el) {
+      if (SKIP_TAGS.has(el.tagName)) return;
+
+      const directText = getDirectText(el);
+      if (directText) {
+        segments.push({
+          id: id++,
+          tag: el.tagName.toLowerCase(),
+          text: directText,
+          cssPath: getCssPath(el, root),
+        });
+      }
+
+      for (const child of el.children) walk(child);
+    }
+
+    walk(root);
+    return segments;
+  }
+
+  function formatCopyAll(results) {
+    return results
+      .map(
+        (r) =>
+          `── ${r.tag} ──\nOriginal: ${r.original}\nTranslated: ${r.translated}`
+      )
+      .join("\n\n");
+  }
+
+  function removeHighlight() {
+    document.getElementById(HIGHLIGHT_ID)?.remove();
+    hoveredEl = null;
+  }
+
+  function removeBanner() {
+    document.getElementById(BANNER_ID)?.remove();
+  }
+
+  function removePanel() {
+    document.getElementById(PANEL_ID)?.remove();
+    panelEl = null;
+  }
+
+  function highlightElement(el) {
+    let box = document.getElementById(HIGHLIGHT_ID);
+    if (!box) {
+      box = document.createElement("div");
+      box.id = HIGHLIGHT_ID;
+      Object.assign(box.style, {
+        position: "fixed",
+        pointerEvents: "none",
+        border: "2px solid #2563eb",
+        background: "rgba(37, 99, 235, 0.12)",
+        zIndex: "2147483646",
+        borderRadius: "4px",
+        transition: "all 0.05s ease",
+      });
+      document.body.appendChild(box);
+    }
+
+    const rect = el.getBoundingClientRect();
+    Object.assign(box.style, {
+      top: `${rect.top}px`,
+      left: `${rect.left}px`,
+      width: `${rect.width}px`,
+      height: `${rect.height}px`,
+      display: rect.width && rect.height ? "block" : "none",
+    });
+  }
+
+  function showBanner() {
+    removeBanner();
+    const banner = document.createElement("div");
+    banner.id = BANNER_ID;
+    banner.textContent = "Click an element to translate · Esc to cancel";
+    Object.assign(banner.style, {
+      position: "fixed",
+      top: "12px",
+      left: "50%",
+      transform: "translateX(-50%)",
+      background: "#1e293b",
+      color: "#fff",
+      padding: "8px 16px",
+      borderRadius: "8px",
+      fontSize: "13px",
+      fontFamily: "system-ui, sans-serif",
+      zIndex: "2147483647",
+      boxShadow: "0 4px 12px rgba(0,0,0,0.25)",
+    });
+    document.body.appendChild(banner);
+  }
+
+  function showPanel(selectedTag, results, capped) {
+    removePanel();
+
+    panelEl = document.createElement("div");
+    panelEl.id = PANEL_ID;
+    Object.assign(panelEl.style, {
+      position: "fixed",
+      bottom: "16px",
+      right: "16px",
+      width: "380px",
+      maxHeight: "70vh",
+      background: "#fff",
+      border: "1px solid #e5e7eb",
+      borderRadius: "12px",
+      boxShadow: "0 8px 32px rgba(0,0,0,0.15)",
+      zIndex: "2147483640",
+      fontFamily: "system-ui, sans-serif",
+      fontSize: "13px",
+      color: "#1a1a1a",
+      display: "flex",
+      flexDirection: "column",
+      overflow: "hidden",
+    });
+
+    const header = document.createElement("div");
+    Object.assign(header.style, {
+      padding: "12px 14px",
+      borderBottom: "1px solid #e5e7eb",
+      fontWeight: "600",
+    });
+    header.textContent = `Translations — <${selectedTag}> (${results.length} segments)`;
+    if (capped) {
+      const warn = document.createElement("div");
+      warn.textContent = `Showing first ${MAX_SEGMENTS} segments`;
+      Object.assign(warn.style, {
+        fontSize: "11px",
+        color: "#f59e0b",
+        fontWeight: "400",
+        marginTop: "4px",
+      });
+      header.appendChild(warn);
+    }
+
+    const body = document.createElement("div");
+    Object.assign(body.style, {
+      flex: "1",
+      overflowY: "auto",
+      padding: "10px 14px",
+    });
+
+    for (const r of results) {
+      const block = document.createElement("div");
+      Object.assign(block.style, {
+        marginBottom: "12px",
+        paddingBottom: "12px",
+        borderBottom: "1px solid #f3f4f6",
+      });
+
+      const tagLabel = document.createElement("div");
+      tagLabel.textContent = `[${r.tag}] ${r.cssPath}`;
+      Object.assign(tagLabel.style, {
+        fontSize: "10px",
+        color: "#9ca3af",
+        marginBottom: "4px",
+        wordBreak: "break-all",
+      });
+
+      const original = document.createElement("div");
+      original.textContent = r.original;
+      Object.assign(original.style, {
+        fontSize: "12px",
+        marginBottom: "4px",
+        wordBreak: "break-word",
+      });
+
+      const arrow = document.createElement("div");
+      arrow.textContent = "→";
+      Object.assign(arrow.style, { color: "#2563eb", marginBottom: "4px" });
+
+      const translated = document.createElement("div");
+      translated.textContent = r.translated;
+      Object.assign(translated.style, {
+        fontSize: "12px",
+        fontWeight: "500",
+        color: "#1d4ed8",
+        wordBreak: "break-word",
+      });
+
+      block.append(tagLabel, original, arrow, translated);
+      body.appendChild(block);
+    }
+
+    const footer = document.createElement("div");
+    Object.assign(footer.style, {
+      padding: "10px 14px",
+      borderTop: "1px solid #e5e7eb",
+      display: "flex",
+      gap: "8px",
+    });
+
+    const makeBtn = (label, primary) => {
+      const btn = document.createElement("button");
+      btn.textContent = label;
+      Object.assign(btn.style, {
+        flex: "1",
+        padding: "7px 10px",
+        border: "none",
+        borderRadius: "8px",
+        fontSize: "12px",
+        fontWeight: "500",
+        cursor: "pointer",
+        background: primary ? "#2563eb" : "#e5e7eb",
+        color: primary ? "#fff" : "#374151",
+      });
+      return btn;
+    };
+
+    const copyBtn = makeBtn("Copy All", true);
+    copyBtn.addEventListener("click", async () => {
+      await navigator.clipboard.writeText(formatCopyAll(results));
+      copyBtn.textContent = "Copied!";
+      setTimeout(() => {
+        copyBtn.textContent = "Copy All";
+      }, 1500);
+    });
+
+    const anotherBtn = makeBtn("Select another", false);
+    anotherBtn.addEventListener("click", () => {
+      removePanel();
+      startPicker(targetLang);
+    });
+
+    const closeBtn = makeBtn("Close", false);
+    closeBtn.addEventListener("click", () => removePanel());
+
+    footer.append(copyBtn, anotherBtn, closeBtn);
+    panelEl.append(header, body, footer);
+    document.body.appendChild(panelEl);
+  }
+
+  async function translateAndShow(el) {
+    const segments = extractTextSegments(el);
+
+    if (!segments.length) {
+      sendStatus("error", { message: "No translatable text found in selection." });
+      return;
+    }
+
+    const capped = segments.length > MAX_SEGMENTS;
+    const toTranslate = capped ? segments.slice(0, MAX_SEGMENTS) : segments;
+
+    sendStatus("translating", { total: toTranslate.length });
+
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: "TRANSLATE_BATCH",
+        segments: toTranslate,
+        targetLang,
+      });
+
+      if (!response?.ok) {
+        throw new Error(response?.error || "Translation failed");
+      }
+
+      showPanel(el.tagName.toLowerCase(), response.results, capped);
+      sendStatus("done", {
+        message: `Translated ${response.results.length} segments`,
+        count: response.results.length,
+      });
+    } catch (err) {
+      sendStatus("error", { message: err.message || String(err) });
+    }
+  }
+
+  function stopPicker() {
+    pickerActive = false;
+    removeHighlight();
+    removeBanner();
+    document.removeEventListener("mousemove", onMouseMove, true);
+    document.removeEventListener("click", onClick, true);
+    document.removeEventListener("keydown", onKeyDown, true);
+  }
+
+  function onMouseMove(e) {
+    if (!pickerActive) return;
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    if (
+      !el ||
+      el.id === HIGHLIGHT_ID ||
+      el.id === BANNER_ID ||
+      el.id === PANEL_ID ||
+      el.closest(`#${PANEL_ID}`)
+    ) {
+      return;
+    }
+    hoveredEl = el;
+    highlightElement(el);
+  }
+
+  function onClick(e) {
+    if (!pickerActive) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    const el = hoveredEl || e.target;
+    stopPicker();
+    translateAndShow(el);
+  }
+
+  function onKeyDown(e) {
+    if (!pickerActive) return;
+    if (e.key === "Escape") {
+      stopPicker();
+      sendStatus("cancelled");
+    }
+  }
+
+  function startPicker(lang) {
+    stopPicker();
+    targetLang = lang;
+    pickerActive = true;
+    showBanner();
+    sendStatus("picking");
+
+    document.addEventListener("mousemove", onMouseMove, true);
+    document.addEventListener("click", onClick, true);
+    document.addEventListener("keydown", onKeyDown, true);
+  }
+
+  // ── Services names bulk translation ─────────────────────────────
+
+  const SOURCE_SELECTOR =
+    "td.td-default-lang .cell.cell-translations.cell-translations__rtl";
+  const ENGLISH_SELECTOR =
+    "td.p-0:not(.td-default-lang) .cell.cell-translations:not(.cell-translations__rtl)";
+
+  function findTranslationTable() {
+    return (
+      document.querySelector(".services-names__body table.table") ||
+      document.querySelector('[data-viewport-type="element"] table.table') ||
+      document.querySelector("table.table")
+    );
+  }
+
+  function findScrollContainer() {
+    const viewport = document.querySelector('[data-viewport-type="element"]');
+    if (viewport?.parentElement) {
+      const parent = viewport.parentElement;
+      if (parent.scrollHeight > parent.clientHeight + 1) return parent;
+    }
+    if (viewport && viewport.scrollHeight > viewport.clientHeight + 1) {
+      return viewport;
+    }
+    return (
+      document.querySelector(".services-names__body") ||
+      document.querySelector(".service-names__body") ||
+      viewport
+    );
+  }
+
+  function getCellText(el) {
+    if (!el) return "";
+    const input = el.querySelector("input, textarea");
+    if (input) return input.value.trim();
+    return el.textContent.trim();
+  }
+
+  function setCellText(el, text) {
+    if (!el) return;
+
+    const input = el.querySelector("input, textarea");
+    if (input) {
+      const proto =
+        input instanceof HTMLTextAreaElement
+          ? HTMLTextAreaElement.prototype
+          : HTMLInputElement.prototype;
+      const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
+      if (setter) setter.call(input, text);
+      else input.value = text;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      return;
+    }
+
+    if (el.isContentEditable) {
+      el.textContent = text;
+      el.dispatchEvent(
+        new InputEvent("input", {
+          bubbles: true,
+          data: text,
+          inputType: "insertText",
+        })
+      );
+      return;
+    }
+
+    el.textContent = text;
+  }
+
+  function getRowKey(tr, sourceCell) {
+    const idMatch = tr.textContent.match(/\bID\s*(\d+)\b/i);
+    if (idMatch) return `id-${idMatch[1]}`;
+    return `text-${getCellText(sourceCell)}`;
+  }
+
+  function collectRowPairs(table) {
+    const pairs = [];
+
+    for (const tr of table.querySelectorAll("tbody tr")) {
+      const sourceCell = tr.querySelector(SOURCE_SELECTOR);
+      const englishCell = tr.querySelector(ENGLISH_SELECTOR);
+      if (!sourceCell || !englishCell) continue;
+
+      const text = getCellText(sourceCell);
+      if (!text) continue;
+
+      pairs.push({
+        key: getRowKey(tr, sourceCell),
+        sourceCell,
+        englishCell,
+        text,
+      });
+    }
+
+    return pairs;
+  }
+
+  async function scrollSnapshot(scrollEl, scrollDelay, onSnapshot) {
+    onSnapshot();
+
+    if (!scrollEl || scrollEl.scrollHeight <= scrollEl.clientHeight) return;
+
+    const step = Math.max(300, scrollEl.clientHeight - 60);
+    for (let y = 0; y <= scrollEl.scrollHeight; y += step) {
+      if (addTranslationsCancelled) throw new Error("Cancelled");
+      scrollEl.scrollTop = y;
+      await new Promise((r) => setTimeout(r, scrollDelay));
+      onSnapshot();
+    }
+
+    scrollEl.scrollTop = 0;
+    await new Promise((r) => setTimeout(r, scrollDelay));
+    onSnapshot();
+  }
+
+  async function collectAllRowEntries(scrollEl, scrollDelay) {
+    const table = findTranslationTable();
+    if (!table) return [];
+
+    const seen = new Map();
+
+    await scrollSnapshot(scrollEl, scrollDelay, () => {
+      for (const pair of collectRowPairs(table)) {
+        if (!seen.has(pair.key)) seen.set(pair.key, pair.text);
+      }
+    });
+
+    return [...seen.entries()].map(([key, text], id) => ({ key, text, id }));
+  }
+
+  async function applyToAllRows(scrollEl, scrollDelay, entries, applyFn) {
+    const table = findTranslationTable();
+    const pending = new Map(entries.map((e) => [e.key, e]));
+    let applied = 0;
+
+    await scrollSnapshot(scrollEl, scrollDelay, () => {
+      for (const pair of collectRowPairs(table)) {
+        const entry = pending.get(pair.key);
+        if (!entry) continue;
+        applyFn(pair, entry);
+        pending.delete(pair.key);
+        applied++;
+      }
+    });
+
+    return { applied, remaining: pending.size };
+  }
+
+  async function runAddTranslations(scrollDelay = 20) {
+    addTranslationsCancelled = false;
+
+    const table = findTranslationTable();
+    if (!table) {
+      throw new Error(
+        "Services names table not found. Open the translations page first."
+      );
+    }
+
+    const scrollEl = findScrollContainer();
+
+    sendStatus("translating", { message: "Scanning rows…", phase: "scan" });
+
+    const entries = await collectAllRowEntries(scrollEl, scrollDelay);
+
+    if (!entries.length) {
+      throw new Error("No service name rows with text found.");
+    }
+
+    sendStatus("translating", {
+      message: `Copying ${entries.length} names to English…`,
+      total: entries.length,
+      phase: "copy",
+    });
+
+    await applyToAllRows(scrollEl, scrollDelay, entries, (pair, entry) => {
+      setCellText(pair.englishCell, entry.text);
+    });
+
+    sendStatus("translating", {
+      message: `Translating ${entries.length} names to Arabic…`,
+      total: entries.length,
+      phase: "translate",
+    });
+
+    const segments = entries.map((e) => ({ id: e.id, text: e.text }));
+
+    const response = await chrome.runtime.sendMessage({
+      type: "TRANSLATE_BATCH",
+      segments,
+      sourceLang: "en",
+      targetLang: "ar",
+    });
+
+    if (!response?.ok) {
+      throw new Error(response?.error || "Translation failed");
+    }
+
+    const byId = new Map(response.results.map((r) => [r.id, r.translated]));
+
+    sendStatus("translating", {
+      message: `Pasting ${response.results.length} Arabic translations…`,
+      total: response.results.length,
+      phase: "paste",
+    });
+
+    const { applied, remaining } = await applyToAllRows(
+      scrollEl,
+      scrollDelay,
+      entries,
+      (pair, entry) => {
+        const arabic = byId.get(entry.id);
+        if (arabic) setCellText(pair.sourceCell, arabic);
+      }
+    );
+
+    if (remaining > 0) {
+      return {
+        count: applied,
+        message: `Applied ${applied} translations. ${remaining} rows were not visible — scroll and retry.`,
+      };
+    }
+
+    return {
+      count: applied,
+      message: `Added ${applied} translations (EN → AR).`,
+    };
+  }
+
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message.type === "START_PICKER") {
+      startPicker(message.targetLang || "en");
+      sendResponse({ ok: true });
+      return false;
+    }
+
+    if (message.type === "CANCEL_PICKER") {
+      stopPicker();
+      sendResponse({ ok: true });
+      return false;
+    }
+
+    if (message.type === "TRANSLATE_PING") {
+      sendResponse({
+        ok: true,
+        pickerActive,
+        hasTranslationTable: !!findTranslationTable(),
+      });
+      return false;
+    }
+
+    if (message.type === "ADD_TRANSLATIONS") {
+      runAddTranslations(message.scrollDelay ?? 20)
+        .then((result) => {
+          sendStatus("done", result);
+          sendResponse({ ok: true, result });
+        })
+        .catch((err) => {
+          const msg = err.message || String(err);
+          if (msg !== "Cancelled") sendStatus("error", { message: msg });
+          else sendStatus("cancelled");
+          sendResponse({ ok: false, error: msg });
+        });
+      return true;
+    }
+
+    if (message.type === "CANCEL_ADD_TRANSLATIONS") {
+      addTranslationsCancelled = true;
+      sendResponse({ ok: true });
+      return false;
+    }
+  });
+})();
