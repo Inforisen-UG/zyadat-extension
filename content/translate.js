@@ -2,6 +2,7 @@
   const PANEL_ID = "zyadat-translate-panel";
   const HIGHLIGHT_ID = "zyadat-translate-highlight";
   const BANNER_ID = "zyadat-translate-banner";
+  const PAGE_FAB_ID = "zyadat-translations-fab";
   const MAX_SEGMENTS = 200;
   const SKIP_TAGS = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "SVG", "PATH"]);
 
@@ -11,8 +12,11 @@
   let hoveredEl = null;
   let panelEl = null;
 
+  let updatePageFabFromStatus = () => {};
+
   const sendStatus = (status, detail = {}) => {
     chrome.runtime.sendMessage({ type: "PICKER_STATUS", status, ...detail });
+    updatePageFabFromStatus(status, detail);
   };
 
   const getDirectText = (el) =>
@@ -675,6 +679,265 @@
       message: `Added ${applied} translations (EN → AR).`,
     };
   }
+
+  // ── In-page "Add translations" button ───────────────────────────
+
+  const PAGE_TITLE_RE = /bulk edit service names and descriptions/i;
+
+  function findTranslationPageHeader() {
+    return document.querySelector(
+      ".services-names__header, .service-names__header"
+    );
+  }
+
+  function findTranslationPageTitle() {
+    const header = findTranslationPageHeader();
+    if (header) {
+      const title = header.querySelector(".title");
+      if (title && PAGE_TITLE_RE.test(title.textContent.trim())) return title;
+    }
+
+    for (const el of document.querySelectorAll("h1, h2, h3, h4, .title")) {
+      if (PAGE_TITLE_RE.test(el.textContent.trim())) return el;
+    }
+
+    return null;
+  }
+
+  function findTitleMountParent(titleEl) {
+    return titleEl.parentElement;
+  }
+
+  function injectPageFabStyles() {
+    if (document.getElementById("zyadat-translations-fab-styles")) return;
+
+    const style = document.createElement("style");
+    style.id = "zyadat-translations-fab-styles";
+    style.textContent = `
+      .zyadat-title-row {
+        display: flex !important;
+        align-items: center !important;
+        flex-wrap: wrap !important;
+        gap: 12px !important;
+      }
+      #${PAGE_FAB_ID} {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 6px;
+        flex-shrink: 0;
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        font-size: 13px;
+        line-height: 1.4;
+      }
+      #${PAGE_FAB_ID} .zyadat-fab-actions {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      #${PAGE_FAB_ID} .zyadat-fab-add {
+        padding: 8px 14px;
+        border: none;
+        border-radius: 6px;
+        background: #2563eb;
+        color: #fff;
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+        box-shadow: 0 2px 8px rgba(37, 99, 235, 0.3);
+        white-space: nowrap;
+      }
+      #${PAGE_FAB_ID} .zyadat-fab-add:hover:not(:disabled) {
+        background: #1d4ed8;
+      }
+      #${PAGE_FAB_ID} .zyadat-fab-add:disabled {
+        opacity: 0.65;
+        cursor: not-allowed;
+      }
+      #${PAGE_FAB_ID} .zyadat-fab-cancel {
+        padding: 8px 12px;
+        border: 1px solid #d1d5db;
+        border-radius: 6px;
+        background: #fff;
+        color: #374151;
+        font: inherit;
+        font-weight: 500;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      #${PAGE_FAB_ID} .zyadat-fab-cancel:hover:not(:disabled) {
+        background: #f9fafb;
+      }
+      #${PAGE_FAB_ID} .zyadat-fab-cancel:disabled {
+        display: none;
+      }
+      #${PAGE_FAB_ID} .zyadat-fab-status {
+        max-width: 360px;
+        padding: 6px 10px;
+        border-radius: 6px;
+        background: #f9fafb;
+        color: #374151;
+        border: 1px solid #e5e7eb;
+        text-align: right;
+        font-size: 12px;
+      }
+      #${PAGE_FAB_ID} .zyadat-fab-status:empty {
+        display: none;
+      }
+      #${PAGE_FAB_ID}[data-state="error"] .zyadat-fab-status {
+        color: #b91c1c;
+        border-color: #fecaca;
+        background: #fef2f2;
+      }
+      #${PAGE_FAB_ID}[data-state="done"] .zyadat-fab-status {
+        color: #166534;
+        border-color: #bbf7d0;
+        background: #f0fdf4;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  function setPageFabState(fab, state) {
+    fab.dataset.state = state;
+    const addBtn = fab.querySelector(".zyadat-fab-add");
+    const cancelBtn = fab.querySelector(".zyadat-fab-cancel");
+    const running = state === "running";
+
+    if (addBtn) addBtn.disabled = running;
+    if (cancelBtn) cancelBtn.disabled = !running;
+  }
+
+  function updatePageFabMessage(fab, message) {
+    const status = fab.querySelector(".zyadat-fab-status");
+    if (status) status.textContent = message || "";
+  }
+
+  function createPageFabElement() {
+    const fab = document.createElement("div");
+    fab.id = PAGE_FAB_ID;
+    fab.dataset.state = "idle";
+    fab.innerHTML = `
+      <div class="zyadat-fab-actions">
+        <button type="button" class="zyadat-fab-add">Add translations</button>
+        <button type="button" class="zyadat-fab-cancel" disabled>Cancel</button>
+      </div>
+      <div class="zyadat-fab-status" aria-live="polite"></div>
+    `;
+
+    const addBtn = fab.querySelector(".zyadat-fab-add");
+    const cancelBtn = fab.querySelector(".zyadat-fab-cancel");
+
+    addBtn.addEventListener("click", () => {
+      setPageFabState(fab, "running");
+      updatePageFabMessage(fab, "Starting…");
+
+      runAddTranslations(20)
+        .then((result) => {
+          setPageFabState(fab, "done");
+          updatePageFabMessage(fab, result.message);
+        })
+        .catch((err) => {
+          const msg = err.message || String(err);
+          if (msg === "Cancelled") {
+            setPageFabState(fab, "idle");
+            updatePageFabMessage(fab, "");
+            return;
+          }
+          setPageFabState(fab, "error");
+          updatePageFabMessage(fab, msg);
+        });
+    });
+
+    cancelBtn.addEventListener("click", () => {
+      addTranslationsCancelled = true;
+      updatePageFabMessage(fab, "Cancelling…");
+    });
+
+    return fab;
+  }
+
+  function injectPageFab() {
+    const titleEl = findTranslationPageTitle();
+    if (!titleEl) return;
+
+    const mountParent = findTitleMountParent(titleEl);
+    if (!mountParent) return;
+
+    injectPageFabStyles();
+    mountParent.classList.add("zyadat-title-row");
+
+    let fab = document.getElementById(PAGE_FAB_ID);
+    if (fab?.parentElement === mountParent) {
+      const addBtn = fab.querySelector(".zyadat-fab-add");
+      if (addBtn && fab.dataset.state === "idle") {
+        addBtn.disabled = !isTranslationPage();
+      }
+      return;
+    }
+
+    if (fab) fab.remove();
+    fab = createPageFabElement();
+    fab.querySelector(".zyadat-fab-add").disabled = !isTranslationPage();
+    mountParent.appendChild(fab);
+  }
+
+  function removePageFab() {
+    if (findTranslationPageTitle()) return;
+
+    const fab = document.getElementById(PAGE_FAB_ID);
+    const mountParent = fab?.parentElement;
+    fab?.remove();
+    mountParent?.classList.remove("zyadat-title-row");
+  }
+
+  updatePageFabFromStatus = (status, detail = {}) => {
+    const fab = document.getElementById(PAGE_FAB_ID);
+    if (!fab) return;
+
+    if (status === "translating") {
+      setPageFabState(fab, "running");
+      if (detail.message) updatePageFabMessage(fab, detail.message);
+      return;
+    }
+
+    if (status === "done") {
+      setPageFabState(fab, "done");
+      updatePageFabMessage(fab, detail.message || "Done.");
+      return;
+    }
+
+    if (status === "error") {
+      setPageFabState(fab, "error");
+      updatePageFabMessage(fab, detail.message || "Translation failed.");
+      return;
+    }
+
+    if (status === "cancelled") {
+      setPageFabState(fab, "idle");
+      updatePageFabMessage(fab, "");
+    }
+  };
+
+  let pageFabCheckTimer = null;
+
+  function watchTranslationPage() {
+    const check = () => {
+      if (findTranslationPageTitle()) injectPageFab();
+      else removePageFab();
+    };
+
+    check();
+
+    const observer = new MutationObserver(() => {
+      clearTimeout(pageFabCheckTimer);
+      pageFabCheckTimer = setTimeout(check, 300);
+    });
+
+    observer.observe(document.body, { childList: true, subtree: true });
+  }
+
+  watchTranslationPage();
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message.type === "START_PICKER") {
