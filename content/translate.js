@@ -400,43 +400,99 @@
     );
   }
 
+  const CELL_EDIT_DELAY = 80;
+  const CELL_BETWEEN_DELAY = 50;
+
+  const cellSleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  function findInputNearCell(cell) {
+    const td = cell.closest("td");
+    const tr = cell.closest("tr");
+
+    return (
+      cell.querySelector("input, textarea") ||
+      td?.querySelector("input, textarea") ||
+      tr?.querySelector("input, textarea") ||
+      (document.activeElement?.matches("input, textarea")
+        ? document.activeElement
+        : null) ||
+      document.querySelector("input:focus, textarea:focus")
+    );
+  }
+
+  function setInputValue(input, text) {
+    const proto =
+      input instanceof HTMLTextAreaElement
+        ? HTMLTextAreaElement.prototype
+        : HTMLInputElement.prototype;
+    const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
+    if (setter) setter.call(input, text);
+    else input.value = text;
+
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    input.dispatchEvent(new Event("blur", { bubbles: true }));
+  }
+
   function getCellText(el) {
     if (!el) return "";
+
+    const nearbyInput = findInputNearCell(el);
+    if (
+      nearbyInput &&
+      (el.contains(nearbyInput) || el.closest("tr")?.contains(nearbyInput))
+    ) {
+      return nearbyInput.value.trim();
+    }
+
     const input = el.querySelector("input, textarea");
     if (input) return input.value.trim();
     return el.textContent.trim();
   }
 
-  function setCellText(el, text) {
-    if (!el) return;
+  async function setCellText(cell, text) {
+    if (!cell) return false;
 
-    const input = el.querySelector("input, textarea");
-    if (input) {
-      const proto =
-        input instanceof HTMLTextAreaElement
-          ? HTMLTextAreaElement.prototype
-          : HTMLInputElement.prototype;
-      const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
-      if (setter) setter.call(input, text);
-      else input.value = text;
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-      input.dispatchEvent(new Event("change", { bubbles: true }));
-      return;
+    cell.click();
+    await cellSleep(CELL_EDIT_DELAY);
+
+    let input = findInputNearCell(cell);
+
+    if (!input) {
+      cell.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+      await cellSleep(CELL_EDIT_DELAY);
+      input = findInputNearCell(cell);
     }
 
-    if (el.isContentEditable) {
-      el.textContent = text;
-      el.dispatchEvent(
+    if (input) {
+      input.focus();
+      setInputValue(input, text);
+      await cellSleep(CELL_BETWEEN_DELAY);
+      return true;
+    }
+
+    const editable =
+      cell.querySelector("[contenteditable='true']") ||
+      (cell.isContentEditable ? cell : null);
+
+    if (editable) {
+      editable.focus();
+      editable.textContent = text;
+      editable.dispatchEvent(
         new InputEvent("input", {
           bubbles: true,
           data: text,
           inputType: "insertText",
         })
       );
-      return;
+      editable.dispatchEvent(new Event("blur", { bubbles: true }));
+      await cellSleep(CELL_BETWEEN_DELAY);
+      return true;
     }
 
-    el.textContent = text;
+    cell.textContent = text;
+    await cellSleep(CELL_BETWEEN_DELAY);
+    return false;
   }
 
   function getRowKey(tr, sourceCell) {
@@ -468,7 +524,7 @@
   }
 
   async function scrollSnapshot(scrollEl, scrollDelay, onSnapshot) {
-    onSnapshot();
+    await onSnapshot();
 
     if (!scrollEl || scrollEl.scrollHeight <= scrollEl.clientHeight) return;
 
@@ -477,12 +533,12 @@
       if (addTranslationsCancelled) throw new Error("Cancelled");
       scrollEl.scrollTop = y;
       await new Promise((r) => setTimeout(r, scrollDelay));
-      onSnapshot();
+      await onSnapshot();
     }
 
     scrollEl.scrollTop = 0;
     await new Promise((r) => setTimeout(r, scrollDelay));
-    onSnapshot();
+    await onSnapshot();
   }
 
   async function collectAllRowEntries(scrollEl, scrollDelay) {
@@ -505,11 +561,12 @@
     const pending = new Map(entries.map((e) => [e.key, e]));
     let applied = 0;
 
-    await scrollSnapshot(scrollEl, scrollDelay, () => {
+    await scrollSnapshot(scrollEl, scrollDelay, async () => {
       for (const pair of collectRowPairs(table)) {
+        if (addTranslationsCancelled) throw new Error("Cancelled");
         const entry = pending.get(pair.key);
         if (!entry) continue;
-        applyFn(pair, entry);
+        await applyFn(pair, entry);
         pending.delete(pair.key);
         applied++;
       }
@@ -544,8 +601,8 @@
       phase: "copy",
     });
 
-    await applyToAllRows(scrollEl, scrollDelay, entries, (pair, entry) => {
-      setCellText(pair.englishCell, entry.text);
+    await applyToAllRows(scrollEl, scrollDelay, entries, async (pair, entry) => {
+      await setCellText(pair.englishCell, entry.text);
     });
 
     sendStatus("translating", {
@@ -579,9 +636,9 @@
       scrollEl,
       scrollDelay,
       entries,
-      (pair, entry) => {
+      async (pair, entry) => {
         const arabic = byId.get(entry.id);
-        if (arabic) setCellText(pair.sourceCell, arabic);
+        if (arabic) await setCellText(pair.sourceCell, arabic);
       }
     );
 
