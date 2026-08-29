@@ -375,9 +375,138 @@
 
   // ── Services names bulk translation ─────────────────────────────
 
-  const SOURCE_CELL_SELECTOR = "td.td-default-lang .cell.cell-translations";
-  const ENGLISH_CELL_SELECTOR =
+  const LEFT_CELL_SELECTOR = "td.td-default-lang .cell.cell-translations";
+  const RIGHT_CELL_SELECTOR =
     "td.p-0:not(.td-default-lang) .cell.cell-translations";
+  const SLOT_SELECTORS = [
+    ".cell-translations-name",
+    ".cell-translations-description",
+  ];
+
+  const LANGUAGE_NAME_TO_CODE = {
+    arabic: "ar",
+    ar: "ar",
+    english: "en",
+    en: "en",
+    spanish: "es",
+    es: "es",
+    french: "fr",
+    fr: "fr",
+    german: "de",
+    de: "de",
+    turkish: "tr",
+    tr: "tr",
+    urdu: "ur",
+    ur: "ur",
+    hindi: "hi",
+    hi: "hi",
+    bengali: "bn",
+    bn: "bn",
+    portuguese: "pt",
+    pt: "pt",
+    russian: "ru",
+    ru: "ru",
+    japanese: "ja",
+    ja: "ja",
+    korean: "ko",
+    ko: "ko",
+    italian: "it",
+    it: "it",
+    dutch: "nl",
+    nl: "nl",
+    polish: "pl",
+    pl: "pl",
+    indonesian: "id",
+    id: "id",
+    persian: "fa",
+    farsi: "fa",
+    fa: "fa",
+    chinese: "zh-CN",
+    mandarin: "zh-CN",
+    "chinese simplified": "zh-CN",
+    "chinese traditional": "zh-TW",
+    cantonese: "zh-TW",
+  };
+
+  const NATIVE_LANGUAGE_PATTERNS = [
+    [/العربية|عربي/i, "ar"],
+    [/english|انجليزي|إنجليزي|الإنجليزية/i, "en"],
+    [/español|spanish/i, "es"],
+    [/français|french/i, "fr"],
+    [/deutsch|german/i, "de"],
+    [/türkçe|turkish/i, "tr"],
+    [/اردو|urdu/i, "ur"],
+    [/हिन्दी|hindi/i, "hi"],
+    [/বাংলা|bengali/i, "bn"],
+    [/português|portuguese/i, "pt"],
+    [/русский|russian/i, "ru"],
+    [/日本語|japanese/i, "ja"],
+    [/한국어|korean/i, "ko"],
+    [/italiano|italian/i, "it"],
+    [/nederlands|dutch/i, "nl"],
+    [/polski|polish/i, "pl"],
+    [/indonesia|indonesian/i, "id"],
+    [/فارسی|persian|farsi/i, "fa"],
+    [/中文|chinese/i, "zh-CN"],
+  ];
+
+  function cleanHeaderLabel(text) {
+    return text.replace(/\bdefault\b/gi, "").replace(/\s+/g, " ").trim();
+  }
+
+  function parseLanguageFromHeader(text) {
+    const cleaned = cleanHeaderLabel(text).toLowerCase();
+    if (!cleaned) return null;
+
+    if (LANGUAGE_NAME_TO_CODE[cleaned]) return LANGUAGE_NAME_TO_CODE[cleaned];
+
+    for (const [name, code] of Object.entries(LANGUAGE_NAME_TO_CODE)) {
+      if (cleaned.includes(name)) return code;
+    }
+
+    for (const [pattern, code] of NATIVE_LANGUAGE_PATTERNS) {
+      if (pattern.test(text)) return code;
+    }
+
+    const iso = cleaned.match(/\b([a-z]{2}(?:-[a-z]{2})?)\b/);
+    if (iso && LANGUAGE_NAME_TO_CODE[iso[1]]) return LANGUAGE_NAME_TO_CODE[iso[1]];
+
+    return null;
+  }
+
+  function detectColumnLanguages(table) {
+    const headerRow = table.querySelector("thead tr");
+    const sampleRow = table.querySelector("tbody tr");
+    if (!headerRow || !sampleRow) return null;
+
+    const leftTd = sampleRow.querySelector("td.td-default-lang");
+    const rightTd = sampleRow.querySelector("td.p-0:not(.td-default-lang)");
+    if (!leftTd || !rightTd) return null;
+
+    const leftHeader =
+      headerRow.children[leftTd.cellIndex]?.textContent?.trim() || "";
+    const rightHeader =
+      headerRow.children[rightTd.cellIndex]?.textContent?.trim() || "";
+
+    const leftCode =
+      leftTd.dataset.lang ||
+      leftTd.getAttribute("lang") ||
+      parseLanguageFromHeader(leftHeader);
+    const rightCode =
+      rightTd.dataset.lang ||
+      rightTd.getAttribute("lang") ||
+      parseLanguageFromHeader(rightHeader);
+
+    if (!leftCode || !rightCode) return null;
+
+    return {
+      left: { code: leftCode, label: cleanHeaderLabel(leftHeader) || leftCode },
+      right: {
+        code: rightCode,
+        label: cleanHeaderLabel(rightHeader) || rightCode,
+      },
+    };
+  }
 
   function findTranslationTable() {
     const scoped =
@@ -389,7 +518,7 @@
     const viewportTable = document.querySelector(
       '[data-viewport-type="element"] table.table, table.table'
     );
-    if (viewportTable?.querySelector(SOURCE_CELL_SELECTOR)) return viewportTable;
+    if (viewportTable?.querySelector(LEFT_CELL_SELECTOR)) return viewportTable;
 
     return null;
   }
@@ -397,8 +526,9 @@
   function isTranslationPage() {
     const table = findTranslationTable();
     if (!table) return false;
+    if (!detectColumnLanguages(table)) return false;
     return !!table.querySelector(
-      `${SOURCE_CELL_SELECTOR} .cell-translations-name, ${SOURCE_CELL_SELECTOR} .cell-translations-description`
+      `${LEFT_CELL_SELECTOR} .cell-translations-name, ${LEFT_CELL_SELECTOR} .cell-translations-description, ${RIGHT_CELL_SELECTOR} .cell-translations-name, ${RIGHT_CELL_SELECTOR} .cell-translations-description`
     );
   }
 
@@ -414,10 +544,34 @@
   }
 
   function getSlotElement(cell) {
+    if (
+      cell?.matches?.(
+        ".cell-translations-name, .cell-translations-description"
+      )
+    ) {
+      return cell;
+    }
     return (
       cell?.querySelector(".cell-translations-name, .cell-translations-description") ||
       cell
     );
+  }
+
+  function forEachTranslationSlot(leftCell, rightCell, callback) {
+    let found = false;
+
+    for (const sel of SLOT_SELECTORS) {
+      const leftSlot = leftCell.querySelector(sel);
+      const rightSlot = rightCell.querySelector(sel);
+      if (!leftSlot && !rightSlot) continue;
+
+      found = true;
+      callback(leftSlot, rightSlot, sel.slice(1));
+    }
+
+    if (!found) {
+      callback(leftCell, rightCell, "cell");
+    }
   }
 
   function findEditableInput(scope) {
@@ -517,35 +671,56 @@
     return false;
   }
 
-  function getRowKey(tr, sourceText) {
+  function getRowKey(tr, slotKey, sourceText) {
     const itemIndex = tr.getAttribute("data-item-index");
-    if (itemIndex != null) return `item-${itemIndex}`;
+    if (itemIndex != null) return `item-${itemIndex}-${slotKey}`;
     const idMatch = tr.textContent.match(/\bID\s*(\d+)\b/i);
     const idPart = idMatch ? `id-${idMatch[1]}` : `row-${tr.rowIndex}`;
-    return `${idPart}-${sourceText}`;
+    return `${idPart}-${slotKey}-${sourceText}`;
   }
 
-  function collectRowPairs(table) {
-    const pairs = [];
+  function collectTranslationTasks(table, langs) {
+    const tasks = [];
 
-    table.querySelectorAll("tbody tr").forEach((tr, index) => {
-      const arabicCell = tr.querySelector(SOURCE_CELL_SELECTOR);
-      const englishCell = tr.querySelector(ENGLISH_CELL_SELECTOR);
-      if (!arabicCell || !englishCell) return;
+    table.querySelectorAll("tbody tr").forEach((tr) => {
+      const leftCell = tr.querySelector(LEFT_CELL_SELECTOR);
+      const rightCell = tr.querySelector(RIGHT_CELL_SELECTOR);
+      if (!leftCell || !rightCell) return;
 
-      const sourceText = getSlotText(arabicCell);
-      if (!sourceText) return;
+      forEachTranslationSlot(leftCell, rightCell, (leftSlot, rightSlot, slotKey) => {
+        const leftText = getSlotText(leftSlot || leftCell);
+        const rightText = getSlotText(rightSlot || rightCell);
 
-      pairs.push({
-        key: getRowKey(tr, sourceText),
-        arabicCell,
-        englishCell,
-        text: sourceText,
-        rowIndex: index,
+        let sourceText;
+        let targetSlot;
+        let targetLang;
+        let direction;
+
+        if (leftText && !rightText) {
+          sourceText = leftText;
+          targetSlot = rightSlot || rightCell;
+          targetLang = langs.right.code;
+          direction = "left-to-right";
+        } else if (rightText && !leftText) {
+          sourceText = rightText;
+          targetSlot = leftSlot || leftCell;
+          targetLang = langs.left.code;
+          direction = "right-to-left";
+        } else {
+          return;
+        }
+
+        tasks.push({
+          key: getRowKey(tr, slotKey, sourceText),
+          sourceText,
+          targetSlot,
+          targetLang,
+          direction,
+        });
       });
     });
 
-    return pairs;
+    return tasks;
   }
 
   async function scrollSnapshot(scrollEl, scrollDelay, onSnapshot) {
@@ -566,38 +741,72 @@
     await onSnapshot();
   }
 
-  async function collectAllRowEntries(scrollEl, scrollDelay) {
+  async function collectAllTranslationTasks(scrollEl, scrollDelay, langs) {
     const table = findTranslationTable();
     if (!table) return [];
 
     const seen = new Map();
 
     await scrollSnapshot(scrollEl, scrollDelay, () => {
-      for (const pair of collectRowPairs(table)) {
-        if (!seen.has(pair.key)) seen.set(pair.key, pair.text);
+      for (const task of collectTranslationTasks(table, langs)) {
+        if (!seen.has(task.key)) seen.set(task.key, task);
       }
     });
 
-    return [...seen.entries()].map(([key, text], id) => ({ key, text, id }));
+    return [...seen.values()].map((task, id) => ({ ...task, id }));
   }
 
-  async function applyToAllRows(scrollEl, scrollDelay, entries, applyFn) {
+  async function applyTranslationTasks(scrollEl, scrollDelay, langs, entries, applyFn) {
     const table = findTranslationTable();
     const pending = new Map(entries.map((e) => [e.key, e]));
     let applied = 0;
 
     await scrollSnapshot(scrollEl, scrollDelay, async () => {
-      for (const pair of collectRowPairs(table)) {
+      for (const task of collectTranslationTasks(table, langs)) {
         if (addTranslationsCancelled) throw new Error("Cancelled");
-        const entry = pending.get(pair.key);
+        const entry = pending.get(task.key);
         if (!entry) continue;
-        await applyFn(pair, entry);
-        pending.delete(pair.key);
+        await applyFn(task, entry);
+        pending.delete(task.key);
         applied++;
       }
     });
 
     return { applied, remaining: pending.size };
+  }
+
+  async function translateEntriesInBatches(entries) {
+    const byTarget = new Map();
+
+    for (const entry of entries) {
+      if (!byTarget.has(entry.targetLang)) byTarget.set(entry.targetLang, []);
+      byTarget.get(entry.targetLang).push(entry);
+    }
+
+    const translatedById = new Map();
+
+    for (const [targetLang, batch] of byTarget) {
+      const response = await chrome.runtime.sendMessage({
+        type: "TRANSLATE_BATCH",
+        segments: batch.map((e) => ({ id: e.id, text: e.sourceText })),
+        sourceLang: "auto",
+        targetLang,
+      });
+
+      if (!response?.ok) {
+        throw new Error(response?.error || "Translation failed");
+      }
+
+      for (const result of response.results) {
+        translatedById.set(result.id, result.translated);
+      }
+    }
+
+    return translatedById;
+  }
+
+  function formatLanguagePair(langs) {
+    return `${langs.left.label} ↔ ${langs.right.label}`;
   }
 
   async function runAddTranslations(scrollDelay = 20) {
@@ -610,73 +819,75 @@
       );
     }
 
-    const scrollEl = findScrollContainer();
-
-    sendStatus("translating", { message: "Scanning rows…", phase: "scan" });
-
-    const entries = await collectAllRowEntries(scrollEl, scrollDelay);
-
-    if (!entries.length) {
-      throw new Error("No translation rows with source text found.");
+    const langs = detectColumnLanguages(table);
+    if (!langs) {
+      throw new Error(
+        "Could not detect left/right column languages from the table header."
+      );
     }
 
-    sendStatus("translating", {
-      message: `Copying ${entries.length} rows to English column…`,
-      total: entries.length,
-      phase: "copy",
-    });
-
-    await applyToAllRows(scrollEl, scrollDelay, entries, async (pair, entry) => {
-      await setCellText(pair.englishCell, entry.text);
-    });
+    const scrollEl = findScrollContainer();
+    const langPair = formatLanguagePair(langs);
 
     sendStatus("translating", {
-      message: `Translating ${entries.length} rows (EN → AR)…`,
+      message: `Scanning rows (${langPair})…`,
+      phase: "scan",
+    });
+
+    const entries = await collectAllTranslationTasks(scrollEl, scrollDelay, langs);
+
+    if (!entries.length) {
+      throw new Error(
+        "No missing translations found. Each row needs text on one side only."
+      );
+    }
+
+    const toRight = entries.filter((e) => e.direction === "left-to-right").length;
+    const toLeft = entries.filter((e) => e.direction === "right-to-left").length;
+    const directionSummary = [
+      toRight ? `${toRight} → ${langs.right.label}` : "",
+      toLeft ? `${toLeft} → ${langs.left.label}` : "",
+    ]
+      .filter(Boolean)
+      .join(", ");
+
+    sendStatus("translating", {
+      message: `Translating ${entries.length} entries (${directionSummary})…`,
       total: entries.length,
       phase: "translate",
     });
 
-    const segments = entries.map((e) => ({ id: e.id, text: e.text }));
-
-    const response = await chrome.runtime.sendMessage({
-      type: "TRANSLATE_BATCH",
-      segments,
-      sourceLang: "en",
-      targetLang: "ar",
-    });
-
-    if (!response?.ok) {
-      throw new Error(response?.error || "Translation failed");
-    }
-
-    const byId = new Map(response.results.map((r) => [r.id, r.translated]));
+    const translatedById = await translateEntriesInBatches(entries);
 
     sendStatus("translating", {
-      message: `Pasting ${response.results.length} Arabic translations…`,
-      total: response.results.length,
+      message: `Filling ${entries.length} missing cells…`,
+      total: entries.length,
       phase: "paste",
     });
 
-    const { applied, remaining } = await applyToAllRows(
+    const { applied, remaining } = await applyTranslationTasks(
       scrollEl,
       scrollDelay,
+      langs,
       entries,
-      async (pair, entry) => {
-        const arabic = byId.get(entry.id);
-        if (arabic) await setCellText(pair.arabicCell, arabic);
+      async (task, entry) => {
+        const translated = translatedById.get(entry.id);
+        if (translated && task.targetSlot) {
+          await setCellText(task.targetSlot, translated);
+        }
       }
     );
 
     if (remaining > 0) {
       return {
         count: applied,
-        message: `Applied ${applied} translations. ${remaining} rows were not visible — scroll and retry.`,
+        message: `Filled ${applied} cells (${langPair}). ${remaining} rows were not visible — scroll and retry.`,
       };
     }
 
     return {
       count: applied,
-      message: `Added ${applied} translations (EN → AR).`,
+      message: `Added ${applied} translations (${directionSummary}).`,
     };
   }
 
@@ -953,10 +1164,13 @@
     }
 
     if (message.type === "TRANSLATE_PING") {
+      const table = findTranslationTable();
+      const languages = table ? detectColumnLanguages(table) : null;
       sendResponse({
         ok: true,
         pickerActive,
         hasTranslationTable: isTranslationPage(),
+        languages,
       });
       return false;
     }

@@ -35,17 +35,18 @@ The extension scrolls the virtualized table twice: once to scan all rows, once t
 
 For the admin **services names** translation table:
 
-1. Open the services names page (Arabic / English columns)
+1. Open the services names page (any two language columns)
 2. Click the extension icon → **Translate** tab
-3. Click **Add translations**
+3. Click **Add translations** (or use the in-page button next to the title)
 
 The extension will:
 
-1. Find every table row that has **English text** on the right (skips empty rows)
-2. Translate each English entry to Arabic
-3. Fill the matching **Arabic cell** on the left (via the real input, not just the view div)
+1. Read the **left** and **right** column languages from the table header (e.g. Arabic / English)
+2. For each name and description slot, find rows where **only one side** has text
+3. Translate from the filled side into the **empty column's language** (source text is auto-detected)
+4. Fill the missing cell via the real input
 
-Works with multiple translation slots per service (name, description, etc.) and virtualized tables.
+Rows where both sides already have text are skipped. Works with multiple translation slots per service (name, description, etc.) and virtualized tables.
 
 ### Generic element translation
 

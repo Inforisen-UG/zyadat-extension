@@ -261,7 +261,10 @@ async function initTranslate() {
   if (ping.hasTranslationTable) {
     addTranslationsBtn.dataset.ready = "1";
     addTranslationsBtn.disabled = false;
-    setTranslateStatus("ready", "Ready — translation table detected");
+    const langLabel = ping.languages
+      ? `${ping.languages.left.label} / ${ping.languages.right.label}`
+      : "translation table";
+    setTranslateStatus("ready", `Ready — ${langLabel}`);
   } else {
     delete addTranslationsBtn.dataset.ready;
     addTranslationsBtn.disabled = true;

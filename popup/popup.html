@@ -74,8 +74,9 @@
       <section class="field">
         <label>Services names translations</label>
         <p class="hint">
-          Reads English from the left (default) column, copies to English,
-          translates EN → AR, and fills the Arabic column. Skips empty rows.
+          Detects the left and right column languages from the table header.
+          For each row, fills the empty side by translating from the filled side.
+          Skips rows where both sides already have text.
         </p>
       </section>
 
